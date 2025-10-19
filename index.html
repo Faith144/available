@@ -1,0 +1,286 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SQLite Database Viewer</title>
+    <script src="https://cdn.jsdelivr.net/npm/sql.js@1.8.0/dist/sql-wasm.js"></script>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+            background-color: #f5f5f5;
+        }
+        .container {
+            background-color: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+        }
+        h1 {
+            color: #2c3e50;
+            text-align: center;
+        }
+        .file-input-container {
+            margin: 20px 0;
+            padding: 15px;
+            background-color: #f8f9fa;
+            border-radius: 5px;
+            text-align: center;
+        }
+        button {
+            background-color: #3498db;
+            color: white;
+            border: none;
+            padding: 10px 15px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 16px;
+            margin: 10px 0;
+        }
+        button:hover {
+            background-color: #2980b9;
+        }
+        button:disabled {
+            background-color: #95a5a6;
+            cursor: not-allowed;
+        }
+        .table-container {
+            margin-top: 20px;
+            overflow-x: auto;
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-bottom: 20px;
+        }
+        th, td {
+            border: 1px solid #ddd;
+            padding: 8px;
+            text-align: left;
+        }
+        th {
+            background-color: #f2f2f2;
+            position: sticky;
+            top: 0;
+        }
+        tr:nth-child(even) {
+            background-color: #f9f9f9;
+        }
+        .error {
+            color: #e74c3c;
+            padding: 10px;
+            background-color: #fadbd8;
+            border-radius: 4px;
+            margin: 10px 0;
+        }
+        .success {
+            color: #27ae60;
+            padding: 10px;
+            background-color: #d5f5e3;
+            border-radius: 4px;
+            margin: 10px 0;
+        }
+        .tabs {
+            display: flex;
+            margin-bottom: 10px;
+        }
+        .tab {
+            padding: 10px 15px;
+            background-color: #eee;
+            cursor: pointer;
+            margin-right: 5px;
+            border-radius: 4px 4px 0 0;
+        }
+        .tab.active {
+            background-color: #3498db;
+            color: white;
+        }
+        .tab-content {
+            display: none;
+        }
+        .tab-content.active {
+            display: block;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>SQLite Database Viewer</h1>
+        
+        <div class="file-input-container">
+            <p>Select your SQLite database file (.db)</p>
+            <input type="file" id="db-file" accept=".db,.sqlite,.sqlite3">
+        </div>
+        
+        <div style="text-align: center;">
+            <button id="load-db" disabled>Load Database</button>
+        </div>
+        
+        <div id="status"></div>
+        
+        <div id="database-content" style="display: none;">
+            <div class="tabs" id="tabs-container"></div>
+            <div id="tab-content-container"></div>
+        </div>
+    </div>
+
+    <script>
+        // Initialize SQL.js
+        let SQL;
+        let db;
+        
+        // Initialize the SQL.js library
+        initSqlJs({
+            locateFile: file => `https://cdn.jsdelivr.net/npm/sql.js@1.8.0/dist/${file}`
+        }).then(function(sql) {
+            SQL = sql;
+            document.getElementById('status').innerHTML = 
+                '<div class="success">SQL.js library loaded successfully. Select a database file to continue.</div>';
+        }).catch(function(err) {
+            document.getElementById('status').innerHTML = 
+                '<div class="error">Failed to load SQL.js: ' + err.message + '</div>';
+        });
+        
+        // Handle file selection
+        document.getElementById('db-file').addEventListener('change', function(e) {
+            const file = e.target.files[0];
+            if (file) {
+                document.getElementById('load-db').disabled = false;
+            }
+        });
+        
+        // Handle load database button
+        document.getElementById('load-db').addEventListener('click', function() {
+            const file = document.getElementById('db-file').files[0];
+            if (!file) {
+                document.getElementById('status').innerHTML = 
+                    '<div class="error">Please select a database file first.</div>';
+                return;
+            }
+            
+            document.getElementById('status').innerHTML = 
+                '<div>Loading database file...</div>';
+            
+            const reader = new FileReader();
+            reader.onload = function() {
+                try {
+                    const Uints = new Uint8Array(reader.result);
+                    db = new SQL.Database(Uints);
+                    
+                    // Display database information
+                    displayDatabaseInfo();
+                    
+                    document.getElementById('status').innerHTML = 
+                        '<div class="success">Database loaded successfully!</div>';
+                } catch (err) {
+                    document.getElementById('status').innerHTML = 
+                        '<div class="error">Error loading database: ' + err.message + '</div>';
+                }
+            };
+            reader.readAsArrayBuffer(file);
+        });
+        
+        // Function to display database information
+        function displayDatabaseInfo() {
+            const contentDiv = document.getElementById('database-content');
+            contentDiv.style.display = 'block';
+            
+            // Get list of tables
+            const tablesResult = db.exec("SELECT name FROM sqlite_master WHERE type='table'");
+            const tables = tablesResult.length ? tablesResult[0].values.map(v => v[0]) : [];
+            
+            // Create tabs for each table
+            const tabsContainer = document.getElementById('tabs-container');
+            const tabContentContainer = document.getElementById('tab-content-container');
+            tabsContainer.innerHTML = '';
+            tabContentContainer.innerHTML = '';
+            
+            // Add a tab for database structure
+            const structureTab = document.createElement('div');
+            structureTab.className = 'tab active';
+            structureTab.textContent = 'Database Structure';
+            structureTab.onclick = () => switchTab('structure', structureTab);
+            tabsContainer.appendChild(structureTab);
+            
+            const structureContent = document.createElement('div');
+            structureContent.id = 'tab-structure';
+            structureContent.className = 'tab-content active';
+            structureContent.innerHTML = '<h3>Database Structure</h3>';
+            tabContentContainer.appendChild(structureContent);
+            
+            // Display tables list in structure tab
+            if (tables.length === 0) {
+                structureContent.innerHTML += '<p>No tables found in the database.</p>';
+            } else {
+                structureContent.innerHTML += '<p>Tables in the database:</p><ul>';
+                tables.forEach(table => {
+                    structureContent.innerHTML += `<li>${table}</li>`;
+                });
+                structureContent.innerHTML += '</ul>';
+            }
+            
+            // Create a tab for each table
+            tables.forEach((table, index) => {
+                const tab = document.createElement('div');
+                tab.className = 'tab';
+                tab.textContent = table;
+                tab.onclick = () => switchTab(table, tab);
+                tabsContainer.appendChild(tab);
+                
+                const tabContent = document.createElement('div');
+                tabContent.id = `tab-${table}`;
+                tabContent.className = 'tab-content';
+                tabContent.innerHTML = `<h3>Table: ${table}</h3>`;
+                tabContentContainer.appendChild(tabContent);
+                
+                // Display table data
+                try {
+                    const result = db.exec(`SELECT * FROM ${table}`);
+                    if (result.length) {
+                        const columns = result[0].columns;
+                        const values = result[0].values;
+                        
+                        let tableHTML = `<div class="table-container"><table>`;
+                        tableHTML += '<tr>';
+                        columns.forEach(col => {
+                            tableHTML += `<th>${col}</th>`;
+                        });
+                        tableHTML += '</tr>';
+                        
+                        values.forEach(row => {
+                            tableHTML += '<tr>';
+                            row.forEach(cell => {
+                                tableHTML += `<td>${cell !== null ? cell : 'NULL'}</td>`;
+                            });
+                            tableHTML += '</tr>';
+                        });
+                        
+                        tableHTML += '</table></div>';
+                        tabContent.innerHTML += tableHTML;
+                    } else {
+                        tabContent.innerHTML += '<p>No data found in this table.</p>';
+                    }
+                } catch (err) {
+                    tabContent.innerHTML += `<div class="error">Error reading table: ${err.message}</div>`;
+                }
+            });
+        }
+        
+        // Function to switch between tabs
+        function switchTab(tabName, clickedTab) {
+            // Update tab styles
+            const tabs = document.querySelectorAll('.tab');
+            tabs.forEach(tab => tab.classList.remove('active'));
+            clickedTab.classList.add('active');
+            
+            // Update tab content visibility
+            const tabContents = document.querySelectorAll('.tab-content');
+            tabContents.forEach(content => content.classList.remove('active'));
+            document.getElementById(`tab-${tabName}`).classList.add('active');
+        }
+    </script>
+</body>
+</html>>
